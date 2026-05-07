@@ -22,11 +22,7 @@ evaluation/
     ├── all_results.json        # Full results (all tiers, both datasets)
     ├── best_hparams.json       # Optimized hyperparameters
     └── optuna_summary.json     # Optuna search summary
-conference_paper/
-├── main.tex                    # Paper source (LaTeX)
-├── ieeeconf.cls                # IEEE conference class file
-├── fig_tier_comparison.png     # Figure 1
-└── fig_model_comparison.png    # Figure 2
+paper.pdf
 ```
 
 ## Setup
