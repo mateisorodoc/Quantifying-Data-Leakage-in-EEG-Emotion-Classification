@@ -1,0 +1,7 @@
+numpy>=1.26.0
+scipy>=1.14.0
+scikit-learn>=1.6.0
+torch>=2.0.0
+tqdm>=4.60.0
+optuna>=4.0.0
+matplotlib>=3.9.0
