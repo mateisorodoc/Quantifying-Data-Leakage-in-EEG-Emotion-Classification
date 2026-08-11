@@ -1,115 +1,134 @@
 # Quantifying Data Leakage in EEG Emotion Classification: A Four-Tier Evaluation Framework
 
-Code and results for the paper submitted to ICSTCC 2026.
+Code, results and verification for the paper submitted to ICSTCC 2026.
+Matei-George Sorodoc, Roxana Rusu Both, Technical University of Cluj-Napoca.
 
-## Key Findings
+Every number in the paper can be re-derived from this repository without a GPU and
+without the datasets, using the scripts in `verification/`.
 
-- Evaluation protocol selection accounts for a **39.7-point macro F1 variation** (T0: 0.607 → T3: 0.210), dominating any architectural difference.
-- **Trial leakage** (Δ = −0.337, Cohen's d = 3.21) is the primary inflation mechanism.
-- Under trial-aware evaluation, GAT provides a modest advantage over MLP (d = 0.74).
-- Personalized within-subject models achieve **0.981 F1** (trial-aware), demonstrating BCI viability when inter-subject variability is eliminated.
+## Key findings
 
-## Repository Structure
+DEAP, all 32 subjects, 4-class quadrant, macro F1 (nominal chance = 0.25):
+
+| Tier | Protocol | MLP | GAT |
+|---|---|---|---|
+| T0 | random split, subjects pooled | 0.551 | 0.579 |
+| T1 | within-subject, trial boundaries ignored | 0.616 | 0.574 |
+| T2 | trial-aware | 0.234 | 0.229 |
+| T3 | leave-one-subject-out | 0.171 | 0.178 |
+
+- Evaluation protocol accounts for a **40.1-point macro F1 swing**; the largest
+  architecture difference at any tier is 4.2 points.
+- **Trial leakage is the dominant component**: Δ = −0.345, Cohen's *d_z* = 3.27,
+  *p* < 0.001, paired across n = 32 subjects.
+- **MLP and GAT are statistically indistinguishable** at T2 and T3 (confidence
+  intervals span zero). The only significant architecture effect is at T1 and favours
+  the MLP, which is consistent with a flat high-capacity model exploiting leakage
+  rather than decoding emotion.
+- T2 sits at the empirical chance baseline (0.243) and **T3 falls significantly below
+  it** (*p* < 0.001), indicating cross-subject transfer that actively misleads.
+- The single-subject OpenBCI recording reaches 0.95 under trial-aware evaluation, but
+  control experiments show this reflects a **session confound**, not emotion decoding:
+  recording order *within* a single session, holding emotion constant, is itself
+  decodable at 0.807, while sham labels sit at chance (0.481).
+
+The headline conclusion is that **trial-aware evaluation is necessary but not
+sufficient**: it constrains the window-to-trial relationship and leaves untouched any
+nuisance variable that is constant within a trial and aligned with the label.
+
+## Repository structure
 
 ```
+paper/
+├── main.tex                        Paper source
+└── fig_tier_comparison.png         Figure 1
+paper.pdf                           Compiled paper
 evaluation/
-├── feature_extraction.py       # 26-feature extraction (BP, DE, PLV, Coherence, PAC, Temporal)
-├── run_evaluation_unified.py   # Four-tier evaluation (MLP + GAT, 4-class)
-├── run_binary_only.py          # Binary arousal/valence evaluation
-├── optuna_tuning.py            # Bayesian hyperparameter optimization (150 trials)
-├── gen_figures.py              # Generate paper figures from results
+├── feature_extraction.py           26 features/channel (BP, DE, PLV, coherence, PAC, temporal)
+├── run_evaluation_unified.py       Four-tier sweep, checkpointed and resumable
+├── openbci_session_control.py      The three session-confound control experiments
+├── optuna_tuning.py                Hyperparameter search
+├── gen_paper_numbers.py            Regenerates every number cited in the paper
+├── gen_fig_revised.py              Regenerates Figure 1
 └── outputs/
-    ├── all_results.json        # Full results (all tiers, both datasets)
-    ├── best_hparams.json       # Optimized hyperparameters
-    └── optuna_summary.json     # Optuna search summary
-paper.pdf
+    ├── all_results.json            Master results: every tier, model and task
+    ├── openbci_session_control.json  Control-experiment results
+    ├── best_hparams.json           Hyperparameters used for all reported runs
+    ├── optuna_summary.json         Search summary
+    └── ckpt/                       312 per-unit checkpoints (raw, unaggregated evidence)
+verification/
+├── audit_paper.py                  108 numeric claims vs. the raw checkpoints
+├── audit_methods.py                45 methodological claims vs. the source
+├── audit_runtime.py                Runtime proof that evaluation is leak-free
+├── check_refs.py                   Reference integrity and ordering
+└── AUDIT_REPORT.md                 Audit results, including errors found and corrected
 ```
 
-## Setup
-
-### Requirements
-
-- Python 3.9+
-- PyTorch 2.0+
-- CUDA-capable GPU (recommended)
+## Verifying the results
 
 ```bash
 pip install -r requirements.txt
+cd verification
+python audit_paper.py     # 108/108 numeric claims
+python audit_methods.py   # 45/45 methodological claims
+python check_refs.py      # references cited, present, correctly ordered
 ```
 
-### DEAP Dataset
+`audit_paper.py` does not compare the paper against the summary file. It rebuilds the
+per-subject score vectors from the 312 individual checkpoints in
+`evaluation/outputs/ckpt/` and recomputes every t-test, Cohen's *d_z* and confidence
+interval with scipy, so an error in the aggregation code would surface rather than be
+reproduced. `audit_runtime.py` additionally proves leak-freedom by instrumenting a live
+training call, but needs the DEAP features and a CUDA device.
 
-1. Request access at [DEAP dataset](https://www.eecs.qmul.ac.uk/mmv/datasets/deap/).
-2. Download `data_preprocessed_python/` and place it at:
-   ```
-   data/DEAP/data_preprocessed_python/s01.dat ... s20.dat
-   ```
+## Reproducing from scratch
 
-## Reproducing Results
-
-### 1. Feature Extraction
-
-Extracts 26 features per channel (32 channels for DEAP, 16 for OpenBCI) with 2s windows and 50% overlap:
+Requires the DEAP dataset and the custom OpenBCI recording, neither of which is
+redistributed here.
 
 ```bash
-cd evaluation
-python feature_extraction.py
+python evaluation/feature_extraction.py --dataset deap
+python evaluation/run_evaluation_unified.py      # ~8 h on an RTX 3080
+python evaluation/openbci_session_control.py
+python evaluation/gen_paper_numbers.py
 ```
 
-Output: `data/DEAP/output/features_v6/` (one `.npz` per subject).
+The sweep checkpoints every work unit, so an interrupted run resumes where it stopped;
+resumed results are bit-identical to an uninterrupted run. A startup guard refuses to
+launch a second concurrent instance, since two processes sharing a checkpoint directory
+can silently overwrite each other's results. Seed is fixed at 42 with
+`cudnn.deterministic = True`.
 
-### 2. Hyperparameter Optimization (optional)
+## Methodological notes
 
-Uses Optuna (TPE sampler, 150 trials) to optimize GAT hyperparameters across Tiers 1-3:
+**Model selection is kept off the test fold.** Early stopping uses a 15% validation
+split carved from the training data, grouped by trial at Tier 2 and by subject at
+Tier 3. The test fold is used exactly once, for the reported predictions.
 
-```bash
-python optuna_tuning.py
-```
+**Chance is established empirically, not assumed.** The quadrant classes are unbalanced
+after the per-subject median split, so uniform-random prediction against the observed
+label distributions gives macro F1 = 0.243 and majority-class prediction gives 0.121.
 
-Pre-optimized hyperparameters are provided in `evaluation/outputs/best_hparams.json`.
+**The class boundary is subject-relative.** The arousal median ranges from 1.97 to 7.02
+across the 32 subjects, so the same raw rating denotes high arousal for one participant
+and low arousal for another. Tiers 0 to 2 are unaffected; the paper bounds what Tier 3
+can be said to measure because of it.
 
-### 3. Four-Tier Evaluation
+**Hyperparameters** were selected with Optuna on 5 of the 32 subjects (3 for the LOSO
+term) with coarser folds than the reported runs. One configuration is shared across
+both architectures and all four tiers, so no tier is tuned preferentially.
 
-Runs both MLP and GAT across all four tiers (T0-T3) for 4-class quadrant classification:
+## Note on earlier versions
 
-```bash
-python run_evaluation_unified.py
-```
+An earlier revision of this repository reported results from a pipeline that selected
+the early-stopping epoch on the test fold, and that evaluated 20 of the 32 DEAP
+subjects. Those numbers are superseded by everything published here. Two claims in
+particular did not survive correction and should not be cited: a statistically
+significant GAT advantage over MLP under trial-aware evaluation, and the reading of the
+single-subject OpenBCI result as evidence for personalized BCI viability.
 
-Then run binary arousal/valence classification:
+## Data availability
 
-```bash
-python run_binary_only.py
-```
-
-Results are saved to `evaluation/outputs/all_results.json`.
-
-### 4. Generate Figures
-
-```bash
-python gen_figures.py
-```
-
-## Four-Tier Evaluation Protocol
-
-| Tier | Protocol | Description |
-|------|----------|-------------|
-| T0 | Maximum Leakage | All subjects pooled, random 80/20 split |
-| T1 | Within-Subject, Leaky | Per-subject StratifiedKFold, trial boundaries not enforced |
-| T2 | Trial-Aware | Per-subject StratifiedGroupKFold (groups = trials) |
-| T3 | Cross-Subject LOSO | Leave-One-Subject-Out |
-
-## Citation
-
-```bibtex
-@inproceedings{sorodoc2026quantifying,
-  title={Quantifying Data Leakage in EEG Emotion Classification: A Four-Tier Evaluation Framework},
-  author={Sorodoc, Matei-George and Both, Roxana Rusu},
-  booktitle={Proceedings of the International Conference on System Theory, Control and Computing (ICSTCC)},
-  year={2026}
-}
-```
-
-## License
-
-MIT
+The DEAP dataset is available from its maintainers under their own licence. The custom
+OpenBCI recording is not redistributed; its acquisition protocol, including the
+class-per-session structure that confounds it, is described in full in the paper.
