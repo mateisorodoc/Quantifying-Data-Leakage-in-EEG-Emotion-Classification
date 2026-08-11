@@ -36,7 +36,9 @@ MODELS = list(R['DEAP']['Tier0'].keys())
 
 plt.rcParams.update({'font.size': 8, 'axes.grid': True,
                      'grid.alpha': 0.3, 'grid.linewidth': 0.5})
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.2, 2.15))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.2, 2.45))
+# white halo so annotations stay readable where they cross lines or bars
+HALO = dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.85)
 
 # ── Left: DEAP tier degradation ──────────────────────────────────────────────
 x = np.arange(len(TIERS))
@@ -47,22 +49,24 @@ for m in MODELS:
                  lw=1.4, color=COLORS[m], label=m)
 
 ax1.axhline(0.25, ls='--', lw=1, color='grey')
-ax1.text(3.05, 0.265, 'chance', fontsize=6.5, color='grey', ha='right')
+ax1.text(-0.35, 0.25, 'chance', fontsize=6.5, color='grey',
+         ha='left', va='center', bbox=HALO)
 ax1.set_xticks(x)
 ax1.set_xticklabels(TIER_LBL)
 ax1.set_ylabel('Macro F1')
 ax1.set_title(f"DEAP 4-class (n={R.get('_meta', {}).get('deap_subjects', 32)} subjects)",
               fontsize=9)
-ax1.set_ylim(0, 0.85)
-ax1.legend(fontsize=6.5, loc='upper right', framealpha=0.9)
+ax1.set_ylim(0, 0.92)
+ax1.set_xlim(-0.45, 3.45)
+ax1.legend(fontsize=6.5, loc='upper right', framealpha=0.95)
 
 # annotate the dominant transition
 t1 = R['DEAP']['Tier1']['GAT']['f1_mean']
 t2 = R['DEAP']['Tier2']['GAT']['f1_mean']
-ax1.annotate('', xy=(2.0, t2 + 0.01), xytext=(2.0, t1 - 0.01),
+ax1.annotate('', xy=(1.93, t2 + 0.012), xytext=(1.93, t1 - 0.012),
              arrowprops=dict(arrowstyle='<->', color='black', lw=0.9))
-ax1.text(2.12, (t1 + t2) / 2, f'trial leakage\n{t2 - t1:+.3f}',
-         fontsize=6.5, ha='left', va='center')
+ax1.text(2.03, (t1 + t2) / 2, f'trial leakage\n{t2 - t1:+.3f}',
+         fontsize=6.5, ha='left', va='center', bbox=HALO)
 
 # ── Right: OpenBCI session-confound controls (all binary, chance = 0.50) ─────
 pa = C['probe_A_recording_order']
@@ -90,14 +94,17 @@ cols = ['#C44E52', '#999999', '#4C72B0', '#4C72B0']
 xb = np.arange(len(vals))
 ax2.bar(xb, vals, yerr=errs, capsize=3, color=cols, width=0.62)
 ax2.axhline(0.5, ls='--', lw=1, color='grey')
-ax2.text(3.45, 0.515, 'chance', fontsize=6.5, color='grey', ha='right')
+ax2.text(-0.45, 0.5, 'chance', fontsize=6.5, color='grey',
+         ha='left', va='center', bbox=HALO)
 ax2.set_xticks(xb)
 ax2.set_xticklabels(labels, fontsize=6.3)
 ax2.set_ylabel('Macro F1')
-ax2.set_ylim(0, 1.08)
+ax2.set_ylim(0, 1.30)
+ax2.set_xlim(-0.6, 3.6)
 ax2.set_title('OpenBCI controls (binary, chance = 0.50)', fontsize=9)
-for i, v in enumerate(vals):
-    ax2.text(i, v + 0.03, f'{v:.3f}', ha='center', fontsize=6.5)
+# place each value label clear of its error-bar cap, not on top of it
+for i, (v, e) in enumerate(zip(vals, errs)):
+    ax2.text(i, v + e + 0.05, f'{v:.3f}', ha='center', va='bottom', fontsize=6.8)
 
 plt.tight_layout()
 plt.savefig(OUT, dpi=300, bbox_inches='tight')
